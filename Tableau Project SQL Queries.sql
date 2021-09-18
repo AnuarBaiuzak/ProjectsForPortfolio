@@ -1,6 +1,6 @@
 /*
 
-Запросы, используемые в Tableau Project
+Р—Р°РїСЂРѕСЃС‹, РёСЃРїРѕР»СЊР·СѓРµРјС‹Рµ РІ Tableau Project
 
 */
 
@@ -14,8 +14,8 @@ From PortfolioProject..CovidDeaths
 where continent is not null 
 order by 1,2
 
--- Перепроверить запрошенные данные
--- Второй способ с помощью location = 'World' - значения очень близки
+-- РџРµСЂРµРїСЂРѕРІРµСЂРёС‚СЊ Р·Р°РїСЂРѕС€РµРЅРЅС‹Рµ РґР°РЅРЅС‹Рµ
+-- Р’С‚РѕСЂРѕР№ СЃРїРѕСЃРѕР± СЃ РїРѕРјРѕС‰СЊСЋ location = 'World' - Р·РЅР°С‡РµРЅРёСЏ РѕС‡РµРЅСЊ Р±Р»РёР·РєРё
 
 
 --Select SUM(new_cases) as total_cases, SUM(cast(new_deaths as int)) as total_deaths, SUM(cast(new_deaths as int))/SUM(New_Cases)*100 as DeathPercentage
@@ -65,7 +65,7 @@ order by PercentPopulationInfected desc
 
 
 
--- Запросы для усложненного варианта
+-- Р—Р°РїСЂРѕСЃС‹ РґР»СЏ СѓСЃР»РѕР¶РЅРµРЅРЅРѕРіРѕ РІР°СЂРёР°РЅС‚Р°
 
 
 -- 1.
