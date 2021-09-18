@@ -1,8 +1,8 @@
 /*
 
- COVID 19 Data Exploration
+COVID 19 Изучение данных
 
-using Joins, CTE, Windows Functions, Aggregate Functions, Creating Views, Converting Data Types
+используя join, CTE, оконные функции, агрегатные функции, создание представления, изменение типа данных
 
  */
 
@@ -20,7 +20,7 @@ from PortfolioProject..CovidDeaths
 order by 1,2
 
 
--- Total Cases - Total Deaths
+-- Суммарно зараженных - Суммарно смертей
 
 select location, date, total_cases, total_deaths, (total_deaths/total_cases)*100 as DeathPercentage
 from PortfolioProject..CovidDeaths
@@ -28,7 +28,7 @@ where location like '%kaz%'
 order by 1,2
 
 
--- Cases Percentage of Population
+-- Доля зараженных к численности населения
 
 select location, date, total_cases, population, (total_cases/population)*100 as CasesPercentage
 from PortfolioProject..CovidDeaths
@@ -36,7 +36,7 @@ from PortfolioProject..CovidDeaths
 order by 1,2
 
 
--- Countries with Highest Number of Infected People
+-- Страны с наибольшей долей зараженных
 
 select location, population, max(total_cases) HighestInfectionCount, max((total_cases/population))*100 PopulationInfectedPercentage
 from PortfolioProject..CovidDeaths
@@ -45,7 +45,7 @@ group by location, population
 order by 4 desc
 
 
--- Countries with Highest Number of Deaths
+-- Страны с наибольшим количеством смертей
 
 select location, max(cast (total_deaths as int)) TotalDeathCount
 from PortfolioProject..CovidDeaths
@@ -55,7 +55,7 @@ group by location
 order by 2 desc
 
 
--- By Continents
+-- По континентам
 
 select continent, max(cast (total_deaths as int)) TotalDeathCount
 from PortfolioProject..CovidDeaths
@@ -65,7 +65,7 @@ group by continent
 order by 2 desc
 
 
---Global Numbers
+-- Глобальные цифры
 
 select sum(new_cases) total_cases, sum(cast (new_deaths as int)) total_deaths, sum(cast (new_deaths as int))/sum(new_cases)*100 DeathPercentage
 from PortfolioProject..CovidDeaths
@@ -76,7 +76,7 @@ order by 1,2
 
 
 
--- Population - Vaccinated People
+-- Население - Вакцинированные
 
 select d.continent, d.location, d.date, d.population, v.new_vaccinations, sum(convert(int, v.new_vaccinations)) over (partition by d.location order by d.date) PeopleVaccinated
 from PortfolioProject..CovidDeaths d
@@ -87,7 +87,7 @@ where d.continent is not null
 order by 2,3
 
 
--- Using CTE
+-- Используем CTE
 
 with popvsvac
 as
@@ -103,7 +103,7 @@ select *, (PeopleVaccinated/population)*100 VaccinatedPercentage
 from popvsvac
 
 
--- Creating View
+-- Создание представления
 
 Create view PeopleVaccinatedPercentage
 as
