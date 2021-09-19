@@ -1,6 +1,6 @@
 /*
 
-Запросы SQL для очистки данных
+Р—Р°РїСЂРѕСЃС‹ SQL РґР»СЏ РѕС‡РёСЃС‚РєРё РґР°РЅРЅС‹С…
 
 */
 
@@ -8,7 +8,7 @@ select *
 from PortfolioProject..DataForCleaning
 
 
--- Стандартизация формата даты
+-- РЎС‚Р°РЅРґР°СЂС‚РёР·Р°С†РёСЏ С„РѕСЂРјР°С‚Р° РґР°С‚С‹
 
 select SaleDateConverted, CONVERT(date, SaleDate)
 from PortfolioProject..DataForCleaning
@@ -23,7 +23,7 @@ update DataForCleaning
 set SaleDateConverted=CONVERT(date, SaleDate)
 
 
--- Заполнение пустых адресов
+-- Р—Р°РїРѕР»РЅРµРЅРёРµ РїСѓСЃС‚С‹С… Р°РґСЂРµСЃРѕРІ
 
 select *
 from PortfolioProject..DataForCleaning
@@ -47,7 +47,7 @@ join PortfolioProject..DataForCleaning b
 where a.PropertyAddress is null
 
 
--- Разделение адресов по разным столбцам (адрес, город, штат)
+-- Р Р°Р·РґРµР»РµРЅРёРµ Р°РґСЂРµСЃРѕРІ РїРѕ СЂР°Р·РЅС‹Рј СЃС‚РѕР»Р±С†Р°Рј (Р°РґСЂРµСЃ, РіРѕСЂРѕРґ, С€С‚Р°С‚)
 
 select
 SUBSTRING(PropertyAddress, 1, CHARINDEX(',', PropertyAddress) -1) as Address,
@@ -94,7 +94,7 @@ update PortfolioProject..DataForCleaning
 set OwnerSplitState=PARSENAME(replace(OwnerAddress, ',', '.'), 1)
 
 
--- Изменить 'Y' и 'N' на 'Yes' и 'No'
+-- РР·РјРµРЅРёС‚СЊ 'Y' Рё 'N' РЅР° 'Yes' Рё 'No'
 
 select SoldAsVacant,
 case when SoldAsVacant = 'Y' then 'Yes'
@@ -110,7 +110,7 @@ set SoldAsVacant=case when SoldAsVacant = 'Y' then 'Yes'
 	 end
 
 
--- Удаление дупликатов
+-- РЈРґР°Р»РµРЅРёРµ РґСѓРїР»РёРєР°С‚РѕРІ
 
 with RowNumCTE as
 (
@@ -130,7 +130,7 @@ from RowNumCTE
 where row_num > 1
 
 
--- Удаление неиспользуемых столбцов
+-- РЈРґР°Р»РµРЅРёРµ РЅРµРёСЃРїРѕР»СЊР·СѓРµРјС‹С… СЃС‚РѕР»Р±С†РѕРІ
 
 alter table PortfolioProject..DataForCleaning
 drop column PropertyAddress, OwnerAddress, TaxDistrict
