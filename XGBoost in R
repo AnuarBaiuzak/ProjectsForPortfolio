@@ -1,0 +1,58 @@
+install.packages("fastDummies")
+install.packages("xgboost")
+library(dplyr)
+library(knitr)
+library(ggplot2)
+library(fastDummies)
+library(xgboost)
+```
+
+# Загрузка Данных
+```{r cache=FALSE}
+data <- read.csv(file.choose(), sep = ";", dec = ".")
+str(data)
+```
+
+Трансформация данных:
+
+```{r cache=FALSE}
+y <- as.numeric(data$bad_30)
+x <- data %>% select(age_loan, gender, closed_credits_cnt, first_score_type, first_score, loan_order, closed_raise_cnt)
+str(x)
+
+x <- dummy_cols(x)
+x <- x %>% select(-gender, -first_score_type)
+str(x)
+
+#setting params
+params <- list(set.seed = 1234, eval_metric = "auc", objective ="binary:logistic")
+```
+
+Подготовка выборки и построение первой модели со всеми параметрами:
+
+```{r results = 'asis', warning=FALSE}
+model <- xgboost(data = as.matrix(x), label = y, params = params, nrounds = 20, verbose = 1)
+
+#shap values
+xgb.plot.shap(data = as.matrix(x), model = model, top_n = 5)
+
+importance_matrix = xgb.importance(colnames(x), model = model)
+importance_matrix
+```
+
+```{r}
+xgb.save(model, 'xgb.model')
+```
+
+# Вызов модели из файла и прогонка новой выборки
+```{r warning=FALSE}
+modelLoad = xgb.load('xgb.model')
+data <- read.csv(file.choose(), sep = ";", dec = ".")
+y <- as.numeric(data$bad_30)
+x <- data %>% select(age_loan, gender, closed_credits_cnt, first_score_type, first_score, loan_order, closed_raise_cnt)
+str(x)
+x <- dummy_cols(x)
+x <- x %>% select(-gender, -first_score_type)
+pred <- predict(modelLoad, as.matrix(x))
+pred1 <- ifelse (pred > 0.5,1,0)
+str(pred1)
