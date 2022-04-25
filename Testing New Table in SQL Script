@@ -1,0 +1,186 @@
+-- Testing new table
+select application_master_id_manual,
+	t.application_master_id,
+	l.loan_id,
+	t.loan_id,
+	client_id_manual,
+	t.client_id,
+	created_at_manual,
+	t.created_at,
+	case when loan_status_manual = 'open' then null
+		else closed_at_manual end closed_at_manual,
+	t.closed_at,
+	t.updated_at,
+	loan_status_manual,
+	t.loan_status,
+	main_agreement_amount_manual,
+	t.main_agreement_amount,
+	main_agreement_term_manual,
+	t.main_agreement_term,
+	main_agreement_start_dt_manual,
+	t.main_agreement_start_dt,
+	main_agreement_due_dt_manual,
+	t.main_agreement_due_dt,
+	number_of_extensions_manual,
+	t.number_of_extensions,
+	current_due_dt_manual,
+	t.current_due_dt,
+	first_payment_dt_manual,
+	t.first_payment_dt,
+	last_payment_dt_manual,
+	t.last_payment_dt,
+	application_type_manual,
+	t.application_type,
+	client_type_manual,
+	t.client_type,
+	is_extended_flg_manual,
+	t.is_extended_flg,
+	product_manual,
+	t.product,
+	country_manual,
+	t.country,
+	first_contacted_at_manual,
+	t.first_contacted_at,
+	hard_fraud_at_manual,
+	t.hard_fraud_at,
+	max_dpd_manual,
+	t.max_dpd,
+	fpd_action_dt_manual,
+	t.fpd_action_dt,
+	fpd_dpd_manual,
+	t.fpd_dpd,
+	application_branch_manual,
+	t.application_branch,
+	application_employee_manual,
+	t.application_employee,
+	model_score_manual,
+	t.model_score,
+	gender_manual,
+	t.gender,
+	age_loan_manual,
+	t.age_loan,
+	paid_amount_manual,
+	t.paid_amount,
+	payment_method_manual,
+	t.payment_method,
+	client_type_overall_manual,
+	t.client_type_overall,
+	divided_flg_manual,
+	t.divided_flg
+from bi_kz.dim_loan_summary_master_test t
+left join lateral (
+	select 
+		l.application_master_id,
+		am.first_application_master_id application_master_id_manual,
+		l.loan_id,
+		l.client_id client_id_manual,
+		created_at_manual,
+		l1.closed_at closed_at_manual,
+		case when number_of_open_loans > 0 then 'open' 
+			when l4.loan_status = 'sold_to_external' and number_of_closed_loans > 0 then 'closed'
+			else l4.loan_status end loan_status_manual,
+		l.main_agreement_amount main_agreement_amount_manual,
+		l.main_agreement_term main_agreement_term_manual,
+		l.main_agreement_start_dt main_agreement_start_dt_manual,
+		l.main_agreement_due_dt main_agreement_due_dt_manual,
+		l.main_agreement_amount main_agreement_amount_ref,
+		number_of_extensions_manual,
+		l4.main_agreement_due_dt current_due_dt_manual,
+		first_payment_dt_manual,
+		last_payment_dt_manual,
+		l.application_type application_type_manual,
+		l.client_type client_type_manual,
+		case when number_of_extensions_manual > 0 then true else false end is_extended_flg_manual,
+		l.product product_manual,
+		l.country country_manual,
+		first_contacted_at_manual,
+		hard_fraud_at_manual,
+		max_dpd_manual,
+		fpd_action_dt_manual,
+		fpd_dpd_manual,
+		l.application_branch application_branch_manual,
+		l.application_employee application_employee_manual,
+		l.model_score model_score_manual,
+		l.gender gender_manual,
+		l.age_loan age_loan_manual,
+		paid_amount_manual,
+		l.payment_method payment_method_manual,
+		l.client_type_overall client_type_overall_manual,
+		l.divided_flg divided_flg_manual
+	from bi_kz.dim_loan_summary_master l
+	left join stage_kz.application_masters am on am.id = l.application_master_id and am.client_id = l.client_id
+	left join lateral (
+		select l1.*
+		from bi_kz.dim_loan_summary l1
+		left join stage_kz.application_masters am1 on am1.id = l1.application_master_id and l1.client_id = am1.client_id
+		where am.first_application_master_id = am1.first_application_master_id and l1.loan_id >= l.loan_id and l1.client_id = l.client_id 
+		order by l1.closed_at desc
+		limit 1
+	) l1 on true
+	left join lateral (
+		select count(case when l2.payment_method = 'refinance_account' then 1 else null end) number_of_extensions_manual,
+			count(case when l2.loan_status = 'open' then 1 else null end) number_of_open_loans,
+			count(case when l2.loan_status = 'closed' then 1 else null end) number_of_closed_loans,
+			min(l2.created_at) created_at_manual,
+			min(l2.first_payment_dt) first_payment_dt_manual,
+			max(l2.last_payment_dt) last_payment_dt_manual,
+			min(l2.first_contacted_at) first_contacted_at_manual,
+			min(l2.hard_fraud_at) hard_fraud_at_manual,
+			max(l2.max_dpd) max_dpd_manual,
+			min(l2.fpd_action_dt) fpd_action_dt_manual,
+			max(l2.max_dpd) fpd_dpd_manual
+		from bi_kz.dim_loan_summary_master l2
+		left join stage_kz.application_masters am2 on am2.id = l2.application_master_id and l2.client_id = am2.client_id
+		where am.first_application_master_id = am2.first_application_master_id and l2.client_id = l.client_id
+	) l2 on true
+	left join lateral (
+		select am3.first_application_master_id,
+			sum(l3.paid_amount) paid_amount_manual
+		from bi_kz.dim_loan_summary_robozaimer l3
+		left join stage_kz.application_masters am3 on am3.id = l3.application_master_id and l3.client_id = am3.client_id
+		where am.first_application_master_id = am3.first_application_master_id and l3.loan_id >= l.loan_id and l3.client_id = l.client_id
+		group by 1
+	) l3 on true
+	left join lateral (
+		select l4.*
+		from bi_kz.dim_loan_summary_robozaimer l4
+		left join stage_kz.application_masters am4 on am4.id = l4.application_master_id and l4.client_id = am4.client_id
+		where am.first_application_master_id = am4.first_application_master_id and l4.loan_id >= l.loan_id and l4.client_id = l.client_id
+		order by l4.loan_id desc
+		limit 1
+	) l4 on true
+	where l.loan_id = t.loan_id and l.payment_method not in ('refinance_account', 'refinance_external_account')
+) l on true
+where t.payment_method != 'refinance_external_account'
+	and (coalesce(t.application_master_id, '0') != coalesce(application_master_id_manual, '0')
+	or coalesce(t.client_id, '0') != coalesce(client_id_manual, '0')
+	or coalesce(t.created_at, '2001-01-01') != coalesce(created_at_manual, '2001-01-01')
+	or t.closed_at != closed_at_manual
+	or coalesce(t.loan_status, ' ') != coalesce(loan_status_manual, ' ') --and loan_status_manual != 'sold_to_external'
+	--or coalesce(t.main_agreement_amount, '1') != coalesce(main_agreement_amount_manual, '1')
+	or coalesce(t.main_agreement_term, '0') != coalesce(main_agreement_term_manual, '0')
+	or coalesce(t.main_agreement_start_dt, '2001-01-01') != coalesce(main_agreement_start_dt_manual, '2001-01-01')
+	or coalesce(t.main_agreement_due_dt, '2001-01-01') != coalesce(main_agreement_due_dt_manual, '2001-01-01')
+	or coalesce(t.number_of_extensions, '1111') != coalesce(number_of_extensions_manual, '1111')
+	or coalesce(t.current_due_dt, '2001-01-01') != coalesce(current_due_dt_manual, '2001-01-01')
+	or coalesce(t.first_payment_dt, '2001-01-01') != coalesce(first_payment_dt_manual, '2001-01-01')
+	or coalesce(t.last_payment_dt, '2001-01-01') != coalesce(last_payment_dt_manual, '2001-01-01')
+	or coalesce(t.application_type, ' ') != coalesce(application_type_manual, ' ')
+	or coalesce(t.client_type, ' ') != coalesce(client_type_manual, ' ')
+	or is_extended_flg_manual != t.is_extended_flg
+	or coalesce(t.product, ' ') != coalesce(product_manual, ' ')
+	or coalesce(t.country, ' ') != coalesce(country_manual, ' ')
+	or coalesce(t.first_contacted_at, '2001-01-01') != coalesce(first_contacted_at_manual, '2001-01-01')
+	or coalesce(t.hard_fraud_at, '2001-01-01') != coalesce(hard_fraud_at_manual, '2001-01-01')
+	or coalesce(t.max_dpd, '11111') != coalesce(max_dpd_manual, '11111')
+	or coalesce(t.fpd_action_dt, '2001-01-01') != coalesce(fpd_action_dt_manual, '2001-01-01')
+	--or coalesce(t.fpd_dpd, '11111') != coalesce(fpd_dpd_manual, '11111')
+	or coalesce(t.application_branch, ' ') != coalesce(application_branch_manual, ' ')
+	or coalesce(t.application_employee, ' ') != coalesce(application_employee_manual, ' ')
+	or coalesce(t.model_score, '1') != coalesce(model_score_manual, '1')
+	or coalesce(t.gender, ' ') != coalesce(gender_manual, ' ')
+	or coalesce(t.age_loan, '1') != coalesce(age_loan_manual, '1')
+	or coalesce(t.paid_amount, '1') != coalesce(paid_amount_manual, '1')
+	or coalesce(t.payment_method, ' ') != coalesce(payment_method_manual, ' ')
+	or coalesce(t.client_type_overall, ' ') != coalesce(client_type_overall_manual, ' ')
+	or t.divided_flg != divided_flg_manual)
