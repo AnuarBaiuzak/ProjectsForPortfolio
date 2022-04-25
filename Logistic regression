@@ -1,0 +1,376 @@
+# Первый шаг - подгрузка требуемых для анализа библиотек:
+install.packages("caret")
+install.packages("ROCR")
+install.packages("RODBC")
+install.packages("Hmisc")
+install.packages("smbinning")
+install.packages("gmodels")
+install.packages("forcats")
+
+library(ggplot2)
+library(caret)
+library(rpart)
+library(RODBC)
+library(Hmisc)
+library(ROCR)
+library(coefplot)
+library(reshape2)
+library(smbinning)
+library(knitr)
+library(gmodels)
+library(dplyr)
+library(forcats)
+library(vcd)
+
+
+# Загрузка Данных
+
+input <- read.csv("C:/folder/f/сегм_повт/RStudio/rep_sample_3.csv", sep = ";", dec = ".")
+
+Трансформация данных:
+
+input <- input %>% mutate(def = bad)
+input <- input %>% mutate(def = as.integer(def))
+'input <- input %>% mutate(t_w_experience = as.factor(t_w_experience))'
+
+## Выборка для построения модели
+data <- input
+'data <- input %>%
+  dplyr::filter(`disbursement_month` >= 201706 & `disbursement_month` <= 201710)'
+
+## Выборка для проверки стабильности переменных
+'dt17 <- input %>%
+  dplyr::filter(`disbursement_month` > 201710)
+gc()'
+
+## Таблица уровня дефолта по категориям
+default_table <- function(Indicator = Indicator) {
+  data %>% dplyr::group_by(Indicator) %>%
+  dplyr::summarize(n = length(Indicator), PD = mean(def)) %>%
+  kable(caption = "Уровень дефолта по категориям", digits = c(0,0,4))
+}
+
+## Диаграмма уровня дефолта по категориям
+default_graph <- function(Indicator = Indicator) {
+  data %>% dplyr::group_by(Indicator) %>%
+  dplyr::summarize(n = length(Indicator), PD = mean(def)) %>%
+  ggplot(aes(x = Indicator, y = PD)) + geom_bar(stat = "identity") +
+  ggtitle("Уровень дефолта по категориям") +
+  xlab("Индикатор") +
+  ylab("Уровень дефолта")
+}
+
+## График распределения индикатора во времени
+stability_graph <- function(data = data, Indicator = Indicator) {
+  data %>% dplyr::group_by(Indicator, `disbursement_month`) %>%
+  dplyr::summarize(n = length(Indicator), def = mean(def)) %>% 
+  merge(data %>% dplyr::group_by(`disbursement_month`) %>% dplyr::summarize(n = length(Indicator)), 
+        by = "disbursement_month") %>% mutate(Share = n.x/n.y) %>%
+  ggplot(aes(x=`disbursement_month`, y = Share, fill = Indicator)) + geom_area() +
+  ylab("Часть выданных кредитов") + 
+  xlab("Месяц выдачи") + 
+  ggtitle("Стабильность индикатора во времени")
+}
+
+## График квантилей индикатора во времени
+stability_cont <- function(data = data, Indicator = Indicator) {
+  data %>% dplyr::group_by(`disbursement_month`) %>%
+  dplyr::summarize(q1 = quantile(Indicator, .25, na.rm = T), med = median(Indicator, na.rm = T), mean = mean(Indicator, na.rm = T), q3 = quantile(Indicator, .75, na.rm = T)) %>% melt(id = "disbursement_month", variable.name = "Критерий") %>%
+  ggplot(aes(x = `disbursement_month`, y = value, color = `Критерий`)) + geom_line() +
+  ylab("Значение критерия") + 
+  xlab("Месяц выдачи") + 
+  ggtitle("Стабильность индикатора во времени")
+}
+
+## График распределения уровня дефолта во времени
+stability_def <- function(data = data, Indicator = Indicator) {
+  data %>% dplyr::group_by(Indicator, `disbursement_month`) %>%
+  dplyr::summarize(def = mean(def)) %>% 
+  ggplot(aes(x=`disbursement_month`, y = def, color = Indicator)) + 
+    geom_line() + geom_point() +
+  ylab("Уровень дефолта") + 
+  xlab("Месяц выдачи") + 
+  ggtitle("Стабильность индикатора во времени")
+}
+
+## Таблица результатов модели
+coef_table <- function(fit = fit) {
+  summary(fit)$coefficients %>% kable(caption = "Значимость параметров модели", 
+                                    col.names = c("Значение", "Ошибка", "z-value", "p-value"), 
+                                    digits = c(2,3,2,5))
+}
+
+## Диаграмма коэффициентов модели
+coef_plot <- function(fit = fit) {
+  dt <- coefplot::buildModelCI(fit, coefficients = names(coef(fit)[-grep("Intercept", names(coef(fit)))])) %>%
+    dplyr::arrange(Value)
+dt$Ext <-gsub(pattern = "Indicator", replacement = "", dt$Coefficient, fixed = T)
+assign("dt", dt, envir = .GlobalEnv) 
+dt %>% dplyr::arrange(Value) %>%
+  ggplot() + 
+  geom_hline(yintercept = 0, colour = gray(1/2), lty = 2) +
+  geom_linerange(aes(x = Ext, ymin = LowOuter,
+                                ymax = HighOuter),
+                            lwd = 1, position = position_dodge(width = 1/2)) +
+  geom_pointrange(aes(x = Ext, y = Value, ymin = LowInner,
+                                 ymax = HighInner),
+                             lwd = 1/2, position = position_dodge(width = 1/2),
+                             shape = 21, fill = "WHITE") +
+  coord_flip() + theme_bw() +
+  ggtitle("Коэффициенты модели и\nих доверительные интервалы") +
+  xlab("Значение") +
+  ylab("Категория") + 
+  scale_x_discrete(limits=dt$Ext)
+}
+
+## Коэффициент Джини модели
+Gini <- function(fit = fit, data = data) {
+  predict(fit, newdata = data, type = 'response') %>% prediction(data$def) %>% performance("auc") %>% (function(a) 2*a@y.values[[1]]-1)
+}
+
+## Таблица PSI (Population Stability Index)
+PSI_table <- function(dt17 = dt17, data = data, Indicator = Indicator) {
+  data %>% dplyr::group_by(Indicator) %>%
+  dplyr::summarize(obs_share = length(Indicator)/nrow(data)) %>%
+  merge(dt17 %>% dplyr::group_by(Indicator, `disbursement_month`) %>%
+  dplyr::summarize(n = length(Indicator)) %>% 
+  inner_join(dt17 %>% dplyr::group_by(`disbursement_month`) %>% dplyr::summarize(n = length(Indicator)), 
+        by = "disbursement_month") %>% mutate(act_share = n.x/n.y), by = "Indicator") %>%
+    mutate(PSI = (act_share - obs_share) * log(act_share / obs_share)) %>% 
+    dplyr::group_by(`disbursement_month`) %>% dplyr::summarize(PSI = sum(PSI), n = sum(n.x)) %>%
+    kable(caption = "Стабильность индикатора во времени (PSI)", 
+                                    col.names = c("Месяц выдачи", "PSI", "К-во кредитов"), 
+                                    digits = c(2,3,0))
+}
+
+## График PSI
+PSI_graph <- function(dt17 = dt17, data = data, Indicator = Indicator) {
+  data %>% dplyr::group_by(Indicator) %>%
+  dplyr::summarize(obs_share = length(Indicator)/nrow(data)) %>%
+  merge(dt17 %>% dplyr::group_by(Indicator, `disbursement_month`) %>%
+  dplyr::summarize(n = length(Indicator)) %>% 
+  inner_join(dt17 %>% dplyr::group_by(`disbursement_month`) %>% dplyr::summarize(n = length(Indicator)), 
+        by = "disbursement_month") %>% mutate(act_share = n.x/n.y), by = "Indicator") %>%
+    mutate(PSI = (act_share - obs_share) * log(act_share / obs_share)) %>% 
+    dplyr::group_by(`disbursement_month`) %>% dplyr::summarize(PSI = sum(PSI), n = sum(n.x)) %>%
+    ggplot(aes(x = `disbursement_month`, y = PSI)) + geom_line() + geom_point() +
+    geom_hline(yintercept = c(.1, .2), lty = 2, size = 1, color = c("green", "red")) + 
+    ggtitle("Стабильность индикатора во времени (PSI)") + 
+    xlab("Месяц выдачи")
+}
+
+  
+
+# Переменные - Дискретные
+
+## Пол
+data <- data %>% mutate(Indicator = `gender`)
+
+## Уровень дефолта 
+default_table()
+default_graph()
+
+## Результаты
+fit <- glm(as.factor(def) ~ Indicator, data = data, family = binomial)
+coef_table(fit)
+
+Джини переменной: `r Gini(fit, data) %>% round(3)`
+
+## Тип заявки
+data <- data %>% mutate(Indicator = `application_type`)
+
+## Уровень дефолта 
+default_table()
+default_graph()
+
+## Результаты
+fit <- glm(as.factor(def) ~ Indicator, data = data, family = binomial)
+coef_table(fit)
+```
+
+Джини переменной: `r Gini(fit, data) %>% round(3)`
+
+## Возраст
+data <- data %>% mutate(Indicator = `age_group`)
+
+## Уровень дефолта 
+default_table()
+default_graph()
+
+
+## Результаты
+fit <- glm(as.factor(def) ~ Indicator, data = data, family = binomial)
+coef_table(fit)
+
+Джини переменной: `r Gini(fit, data) %>% round(3)`
+
+## Количество закрытых займов
+data <- data %>% mutate(Indicator = `closed_group`)
+
+## Уровень дефолта 
+default_table()
+default_graph()
+
+
+## Результаты
+fit <- glm(as.factor(def) ~ Indicator, data = data, family = binomial)
+coef_table(fit)
+
+Джини переменной: `r Gini(fit, data) %>% round(3)`
+
+
+## Дни просрочки
+
+data <- data %>% mutate(Indicator = `prev_dpd_group`)
+
+## Уровень дефолта 
+default_table()
+default_graph()
+
+
+## Результаты
+fit <- glm(as.factor(def) ~ Indicator, data = data, family = binomial)
+coef_table(fit)
+
+Джини переменной: `r Gini(fit, data) %>% round(3)`
+
+## Наличие отказа от суммы больше
+data <- data %>% mutate(Indicator = `prev_downsell_group`)
+
+## Уровень дефолта 
+default_table()
+default_graph()
+
+
+## Результаты
+fit <- glm(as.factor(def) ~ Indicator, data = data, family = binomial)
+coef_table(fit)
+```
+Джини переменной: `r Gini(fit, data) %>% round(3)`
+
+## Соотношение суммы платежей к выданным займам
+data <- data %>% mutate(Indicator = `pmt_to_issued_group`)
+
+## Уровень дефолта 
+default_table()
+default_graph()
+
+
+## Результаты
+fit <- glm(as.factor(def) ~ Indicator, data = data, family = binomial)
+coef_table(fit)
+
+Джини переменной: `r Gini(fit, data) %>% round(3)`
+
+## Скорбалл первого займа
+data <- data %>% mutate(Indicator = `first_score_group`)
+
+## Уровень дефолта 
+default_table()
+default_graph()
+
+
+## Результаты
+fit <- glm(as.factor(def) ~ Indicator, data = data, family = binomial)
+coef_table(fit)
+```
+Джини переменной: `r Gini(fit, data) %>% round(3)`
+# Модель
+
+Первая проверка будет матрица корреляции выбранных предикторов (на основании Cramer's V):
+catcorrm <- function(vars, dat) sapply(vars, function(y) sapply(vars, function(x) assocstats(table(dat[,x], dat[,y]))$cramer))
+
+cor_mat <- catcorrm(c(
+"gender",
+"closed_group",
+"age_group",
+"prev_dpd_group",
+"prev_downsell_group",
+"application_type",
+"pmt_to_issued_group",
+"first_score_group"
+), data)
+
+cor_mat2 <- data.frame(cor_mat) %>% 
+  cbind(Indicator = row.names(cor_mat)) %>%
+  melt(id.vars = "Indicator", value.name = "Correlation", variable.name = "Indicator_2") %>%
+  inner_join(data.frame(lower.tri(cor_mat)) %>% 
+  setNames(row.names(cor_mat)) %>%
+  cbind(Indicator = row.names(cor_mat)) %>%
+  melt(id.vars = "Indicator", variable.name = "Indicator_2") %>%
+  filter(value)) %>% select(-value)
+
+cor_mat2 %>% 
+  filter(Correlation > .1) %>%
+  arrange(desc(Correlation)) %>%
+  kable(caption = "Самые коррелируемые показатели", digits = c(0,0,3), 
+        col.names = c("Первая переменная", "Вторая переменная", "Корреляция"))
+
+Подготовка выборки и построение первой модели со всеми параметрами:
+fit <- glm(as.factor(def) ~ 
+gender + closed_group + age_group + prev_downsell_group + first_score_group,
+data = data, family = binomial)
+
+coef_table(fit)
+
+drop1(fit, test = 'Chisq') %>%
+  (function(k) k[order(k$`Pr(>Chi)`),]) %>%
+  kable(row.names = T)
+  
+  coef_table(fit)
+  
+  fit <- glm(as.factor(def) ~ 
+gender + closed_group + age_group + prev_downsell_group + first_score_group,
+data = data, family = binomial)
+
+p <- predict(fit, newdata = data, type = 'response') %>% 
+  prediction(data$def) %>%
+  performance('tpr', 'fpr') 
+p1 <- predict(fit, newdata = data, type = 'response') %>% 
+  prediction(data$def) %>%
+  performance('tpr', 'fpr') 
+
+data.frame(x=p@x.values[[1]], y=p@y.values[[1]], Sample = 1) %>%
+  rbind(data.frame(x=p1@x.values[[1]], y=p1@y.values[[1]], Sample = 2)) %>%
+  mutate(Sample = factor(Sample, labels = c("Test", "Train"))) %>%
+  ggplot(aes(x=x,y=y, color = Sample)) + geom_line() +
+  xlab("False Positive Rate") + ylab("True Positive Rate") +
+  ggtitle(paste0(c("ROC кривая модели\nGini = ", fit %>% predict(newdata = data, type = 'response') %>% prediction(data$def) %>% performance("auc") %>% (function(a) 2*a@y.values[[1]]-1) %>% round(3)), collapse = ""))
+
+pr <- predict(fit, newdata = data, type = 'response')
+data.frame(pred = pr, real = data$def, 
+                   pred_grp = cut(pr, breaks = quantile(pr, 0:10/10), ordered_result = T, include.lowest = T, right = F, labels = 1:10)) %>%
+  dplyr::group_by(pred_grp) %>% 
+  dplyr::summarize(pred = mean(pred), real = mean(real)) %>%
+  ggplot(aes(x = (pred_grp %>% as.numeric)*10)) + geom_point(aes(y = pred), color = "red") +
+  geom_line(aes(y=real)) + ggtitle("Фактические результаты (черные) и\n предсказания скоркарты (красные) - вся база") +
+  ylab("Вероятность дефолта (60+@4M)") + xlab("Дециль скора клиента")
+
+pr <- predict(fit, newdata = data, type = 'response')
+data.frame(pred = pr, real = data$def, 
+                   pred_grp = cut(pr, breaks = quantile(pr, 0:10/10), ordered_result = T, include.lowest = T, right = F, labels = 1:10)) %>%
+  dplyr::group_by(pred_grp) %>% 
+  dplyr::summarize(pred = mean(pred), real = mean(real)) %>%
+  ggplot(aes(x = (pred_grp %>% as.numeric)*10)) + geom_point(aes(y = pred), color = "red") +
+  geom_line(aes(y=real)) + ggtitle("Фактические результаты (черные) и\n предсказания скоркарты (красные) - тестовая выборка") +
+  ylab("Вероятность дефолта (60+@4M)") + xlab("Дециль скора клиента")
+  
+  set.seed(123)
+inList <- caret::createDataPartition(data$def, p = .7, list = T, times = 10)
+
+res <- lapply(inList, function(tr) {
+Gini(glm(as.factor(def) ~ 
+gender + closed_group + age_group + prev_downsell_group + first_score_group, data = data, family = binomial), data[-tr,]) %>% round(3)
+}) %>% unlist()
+
+
+data.frame(res = res) %>% 
+  ggplot(aes(x = "All", y=res)) + 
+  geom_violin() + ylab("Gini") +
+  ggtitle("Производительность модели для 100\nслучайных тестировочных выборок") +
+  geom_hline(yintercept = median(res), color = 'green', linetype = 2, size = 1) + 
+  geom_label(aes(x="All", y = median(res), label = paste("Median Gini: ", median(res) %>% round(3), sep = ''))) + ylim(c(.5, .7))
+summary(res)
+
+dataPred = cbind(data.frame(loan_id = data$loan_id, def = data$def), pred = predict(fit, newdata = data, type = 'response'))
+write.csv(dataPred, file = "dataPredicted30p.csv")
