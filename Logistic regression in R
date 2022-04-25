@@ -27,8 +27,6 @@ library(vcd)
 
 input <- read.csv("C:/folder/f/сегм_повт/RStudio/rep_sample_3.csv", sep = ";", dec = ".")
 
-Трансформация данных:
-
 input <- input %>% mutate(def = bad)
 input <- input %>% mutate(def = as.integer(def))
 'input <- input %>% mutate(t_w_experience = as.factor(t_w_experience))'
@@ -275,6 +273,7 @@ fit <- glm(as.factor(def) ~ Indicator, data = data, family = binomial)
 coef_table(fit)
 ```
 Джини переменной: `r Gini(fit, data) %>% round(3)`
+
 # Модель
 
 Первая проверка будет матрица корреляции выбранных предикторов (на основании Cramer's V):
